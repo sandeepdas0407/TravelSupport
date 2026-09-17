@@ -163,3 +163,29 @@ Deterministic CI is deliberately green (M4) before agents are layered on top (M5
 - **M4**: confirm `pr-checks.yml` runs and passes on a real PR (lint, typecheck, `pytest`, `vitest`, both builds).
 - **M5**: intentionally introduce a failing test/lint error in a PR and confirm `agent-ci-fix.yml` detects it, patches within the iteration cap, and re-passes checks; confirm it refuses to touch out-of-scope paths.
 - **M6–M7**: after `infra-apply.yml` and `deploy-and-verify.yml` run, hit the live SWA URL's `/api/health` and submit a real trip-plan request through the deployed frontend; check Application Insights for the request trace and confirm the deploy-verify agent's health/smoke checks passed.
+
+---
+
+## Addendum (2026-09-17): SWA managed Functions replaced with a linked standalone Function App
+
+The original plan hosted the backend as Azure Static Web Apps' "managed Functions" (the
+`api_location` input to `azure/static-web-apps-deploy-action`, built in-place by Oryx during the
+SWA deploy). On first real deploy this consistently failed with a generic
+`Deployment Failure Reason: Failed to deploy the Azure Functions` during Azure's server-side
+polling phase, despite the Oryx build itself succeeding. This turned out to be an open,
+platform-wide Azure bug affecting SWA managed-Functions deploys across multiple language runtimes
+(.NET, Next.js, and — per this repo — Python), on both Free and Standard SKUs, unrelated to any
+code in this repo. Tracking issues: [Azure/static-web-apps#1761](https://github.com/Azure/static-web-apps/issues/1761),
+[#1760](https://github.com/Azure/static-web-apps/issues/1760).
+
+**Fix**: the backend is now deployed as its own standalone Azure Function App resource
+(`infra/modules/functionApp.bicep` — Linux Consumption plan + storage account + the same
+`function_app.py` ASGI entrypoint, unchanged), and linked to the Static Web App via SWA's
+[linked backends](https://learn.microsoft.com/azure/static-web-apps/apis-overview#bring-your-own-functions)
+feature (`Microsoft.Web/staticSites/linkedBackends` in `infra/modules/staticWebApp.bicep`).
+Requests to `/api/*` on the SWA's own domain are still transparently proxied to the Function App
+— same origin from the frontend's perspective, so no CORS changes were needed. `deploy-and-verify.yml`
+now has separate `deploy-frontend` (SWA, static content only) and `deploy-backend`
+(`Azure/functions-action@v1`, direct Function App deploy) jobs instead of one combined step. This
+sidesteps the broken managed-Functions path entirely and, per the linked issues, is also the more
+commonly-recommended workaround in the community while Microsoft's fix is pending.

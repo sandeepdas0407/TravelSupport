@@ -47,12 +47,11 @@ module azureMaps 'modules/azureMaps.bicep' = {
   }
 }
 
-module staticWebApp 'modules/staticWebApp.bicep' = {
-  name: 'staticWebApp'
+module functionApp 'modules/functionApp.bicep' = {
+  name: 'functionApp'
   params: {
     location: location
-    name: '${resourcePrefix}-swa'
-    sku: staticWebAppSku
+    name: '${resourcePrefix}-func'
     anthropicApiKey: anthropicApiKey
     azureMapsSubscriptionKey: azureMaps.outputs.primaryKey
     googlePlacesApiKey: googlePlacesApiKey
@@ -61,5 +60,18 @@ module staticWebApp 'modules/staticWebApp.bicep' = {
   }
 }
 
+module staticWebApp 'modules/staticWebApp.bicep' = {
+  name: 'staticWebApp'
+  params: {
+    location: location
+    name: '${resourcePrefix}-swa'
+    sku: staticWebAppSku
+    backendResourceId: functionApp.outputs.functionAppId
+    backendRegion: location
+  }
+}
+
 output staticWebAppHostname string = staticWebApp.outputs.defaultHostname
 output staticWebAppName string = staticWebApp.outputs.staticWebAppName
+output functionAppName string = functionApp.outputs.functionAppName
+output functionAppHostname string = functionApp.outputs.defaultHostname

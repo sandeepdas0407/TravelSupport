@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
+  deploy-frontend:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -20,10 +20,11 @@ jobs:
       url: ${{ steps.deploy.outputs.static_web_app_url }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: false
 
-      - name: Deploy to Azure Static Web Apps
+      # Static content only — the API is a separately-deployed Function App linked as this SWA's
+      # backend (see infra/modules/staticWebApp.bicep). SWA's own "managed Functions" build/deploy
+      # path has an open platform-side bug as of this writing; this sidesteps it entirely.
+      - name: Deploy static content to Azure Static Web Apps
         id: deploy
         uses: azure/static-web-apps-deploy@v1
         with:
@@ -31,11 +32,43 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: upload
           app_location: frontend
-          api_location: backend
           output_location: dist
 
+  deploy-backend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      function_app_name: ${{ steps.find-app.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Find the Function App name
+        id: find-app
+        run: |
+          NAME=$(az functionapp list --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" --query "[0].name" -o tsv)
+          if [ -z "$NAME" ]; then
+            echo "No Function App found in ${{ secrets.AZURE_RESOURCE_GROUP }} — has infra-apply.yml been run?" >&2
+            exit 1
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ steps.find-app.outputs.name }}
+          package: backend
+          scm-do-build-during-deployment: true
+          enable-oryx-build: true
+
   verify:
-    needs: build-and-deploy
+    needs: [deploy-frontend, deploy-backend]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -47,14 +80,14 @@ jobs:
       - name: Health-check the deployed app
         id: health
         run: |
-          URL="${{ needs.build-and-deploy.outputs.url }}"
+          URL="${{ needs.deploy-frontend.outputs.url }}"
           echo "Checking $URL/api/health"
-          for attempt in 1 2; do
+          for attempt in 1 2 3; do
             if curl -fsS --max-time 15 "$URL/api/health" | grep -q '"status":"ok"'; then
               echo "ok=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "Attempt $attempt failed, waiting for SWA propagation..."
+            echo "Attempt $attempt failed, waiting for propagation..."
             sleep 30
           done
           echo "ok=false" >> "$GITHUB_OUTPUT"
@@ -66,11 +99,13 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
             REPO: ${{ github.repository }}
-            DEPLOYED URL: ${{ needs.build-and-deploy.outputs.url }}
+            DEPLOYED URL: ${{ needs.deploy-frontend.outputs.url }}
+            FUNCTION APP: ${{ needs.deploy-backend.outputs.function_app_name }}
             MERGE COMMIT: ${{ github.sha }}
 
-            The deployment to Azure Static Web Apps for this merge to main failed its health
-            check (GET /api/health did not return {"status":"ok"} after retries).
+            The deployment to Azure for this merge to main failed its health check
+            (GET /api/health on the Static Web App, proxied to the linked Function App, did not
+            return {"status":"ok"} after retries).
 
             You are the deploy-verify agent. You cannot edit any source files. Your only two
             possible actions:

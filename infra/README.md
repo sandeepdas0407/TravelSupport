@@ -61,6 +61,19 @@ anything can be deployed.
    ```
    (Add a matching `environment:prod` credential once a `prod` GitHub Environment exists.)
 
+   `deploy-and-verify.yml`'s `deploy-backend` job also authenticates via OIDC (to deploy the
+   Function App directly with `Azure/functions-action@v1` — see the 2026-09-17 addendum in
+   `plans/architecture.md` for why), triggered by a plain push to `main`, which needs its own
+   credential:
+   ```
+   az ad app federated-credential create --id <appId> --parameters '{
+     "name": "travelsupport-push-main",
+     "issuer": "https://token.actions.githubusercontent.com",
+     "subject": "repo:<org>@<owner-id>/<repo>@<repo-id>:ref:refs/heads/main",
+     "audiences": ["api://AzureADTokenExchange"]
+   }'
+   ```
+
 5. **Add repo secrets** (Settings → Secrets and variables → Actions):
    - `AZURE_CLIENT_ID` — the `appId` from step 2
    - `AZURE_TENANT_ID` — `az account show --query tenantId -o tsv`

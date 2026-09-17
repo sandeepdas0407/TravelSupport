@@ -8,18 +8,11 @@ param name string
 @allowed(['Free', 'Standard'])
 param sku string = 'Free'
 
-@secure()
-param anthropicApiKey string
+@description('Resource ID of the Azure Function App to link as this Static Web App\'s /api/* backend')
+param backendResourceId string
 
-@secure()
-param azureMapsSubscriptionKey string
-
-@secure()
-param googlePlacesApiKey string
-
-param claudeModel string = 'claude-sonnet-4-5'
-param allowedOrigins string
-param appInsightsConnectionString string
+@description('Region of the linked Function App (required by the linkedBackends API)')
+param backendRegion string
 
 resource staticWebApp 'Microsoft.Web/staticSites@2023-12-01' = {
   name: name
@@ -33,16 +26,17 @@ resource staticWebApp 'Microsoft.Web/staticSites@2023-12-01' = {
   }
 }
 
-resource appSettings 'Microsoft.Web/staticSites/config@2023-12-01' = {
+// Requests to /api/* on the Static Web App's own domain are proxied to this Function App —
+// same-origin from the frontend's perspective, so no CORS configuration is needed. This
+// bypasses Azure Static Web Apps' "managed Functions" build/deploy path, which has an open
+// platform-side bug as of this writing (see plans/architecture.md for the incident notes and
+// tracking issue links).
+resource linkedBackend 'Microsoft.Web/staticSites/linkedBackends@2023-12-01' = {
   parent: staticWebApp
-  name: 'appsettings'
+  name: 'backend'
   properties: {
-    ANTHROPIC_API_KEY: anthropicApiKey
-    CLAUDE_MODEL: claudeModel
-    AZURE_MAPS_SUBSCRIPTION_KEY: azureMapsSubscriptionKey
-    GOOGLE_PLACES_API_KEY: googlePlacesApiKey
-    ALLOWED_ORIGINS: allowedOrigins
-    APPLICATIONINSIGHTS_CONNECTION_STRING: appInsightsConnectionString
+    backendResourceId: backendResourceId
+    region: backendRegion
   }
 }
 
