@@ -1,0 +1,97 @@
+name: Deploy and verify
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      url: ${{ steps.deploy.outputs.static_web_app_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Deploy to Azure Static Web Apps
+        id: deploy
+        uses: azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: frontend
+          api_location: backend
+          output_location: dist
+          production_branch: main
+
+  verify:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Health-check the deployed app
+        id: health
+        run: |
+          URL="${{ needs.build-and-deploy.outputs.url }}"
+          echo "Checking $URL/api/health"
+          for attempt in 1 2; do
+            if curl -fsS --max-time 15 "$URL/api/health" | grep -q '"status":"ok"'; then
+              echo "ok=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Attempt $attempt failed, waiting for SWA propagation..."
+            sleep 30
+          done
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy-verify agent (only runs on health-check failure)
+        if: steps.health.outputs.ok != 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            DEPLOYED URL: ${{ needs.build-and-deploy.outputs.url }}
+            MERGE COMMIT: ${{ github.sha }}
+
+            The deployment to Azure Static Web Apps for this merge to main failed its health
+            check (GET /api/health did not return {"status":"ok"} after retries).
+
+            You are the deploy-verify agent. You cannot edit any source files. Your only two
+            possible actions:
+            1. If this looks like a real regression from this merge, run
+               `git revert --no-edit ${{ github.sha }}` and push it directly to main
+               (`git push origin HEAD:main`), then open an issue with `gh issue create`
+               summarizing the failure and linking the revert commit.
+            2. If you cannot determine the cause with confidence, do not revert — instead open
+               an issue with `gh issue create` describing what you observed (curl output, any
+               logs you can reach) so a human can investigate.
+
+            Prefer option 2 unless you are confident the revert is correct and safe.
+
+          claude_args: |
+            --max-turns 8
+            --allowedTools "Bash(curl:*),Bash(git revert:*),Bash(git push:*),Bash(gh issue create:*)"
+            --disallowedTools "Edit,Write,NotebookEditCell"
+
+      - name: Fail the job if unhealthy
+        if: steps.health.outputs.ok != 'true'
+        run: |
+          echo "Deployment failed health check; see the deploy-verify agent's actions above."
+          exit 1

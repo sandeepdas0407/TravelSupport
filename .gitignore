@@ -1,0 +1,34 @@
+# Node / frontend
+node_modules/
+dist/
+*.local
+
+# Python / backend
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets / local config
+.env
+backend/local.settings.json
+frontend/.env
+
+# Azure Functions
+backend/.python_packages/
+backend/bin/
+backend/obj/
+
+# Editor / OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Claude Code session artifacts
+.claude/
+
+# Bicep
+infra/**/*.json.bak

@@ -1,0 +1,12 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "ANTHROPIC_API_KEY": "",
+    "CLAUDE_MODEL": "claude-sonnet-4-5",
+    "AZURE_MAPS_SUBSCRIPTION_KEY": "",
+    "GOOGLE_PLACES_API_KEY": "",
+    "ALLOWED_ORIGINS": "http://localhost:5173"
+  }
+}

@@ -1,0 +1,159 @@
+name: PR checks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: mypy app
+      - run: pytest -q
+
+  # Agentic build-fix / test-fix stage. Runs only after a check job above fails, on the PR's own
+  # branch/event (not workflow_run) so claude-code-action's built-in "push directly to the open PR
+  # branch" behavior applies. Self-terminating: each fix attempt is a real commit + push, which
+  # re-triggers this whole workflow via `pull_request: synchronize`; the iteration count below is
+  # read back from git history each run, so there is no unbounded loop.
+  agent-ci-fix:
+    needs: [frontend, backend]
+    if: failure() && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read
+      id-token: write
+    concurrency:
+      group: agent-ci-fix-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Count prior fix attempts
+        id: attempts
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
+          COUNT=$(git log "origin/${{ github.event.pull_request.base.ref }}..HEAD" --grep="Agentic-Fix: true" --oneline | wc -l)
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Stop and flag for human review if attempts exhausted
+        if: fromJSON(steps.attempts.outputs.count) >= 3
+        run: |
+          gh label create needs-human-review --color FF0000 --force || true
+          gh pr edit "${{ github.event.pull_request.number }}" --add-label needs-human-review
+          gh pr comment "${{ github.event.pull_request.number }}" --body \
+            "The agentic build-fix/test-fix loop made 3 attempts and checks are still failing. Stopping here for human review."
+          exit 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Collect failing job logs
+        id: logs
+        if: fromJSON(steps.attempts.outputs.count) < 3
+        run: |
+          gh run view "${{ github.run_id }}" --log-failed > /tmp/failed-checks.log || true
+          tail -c 20000 /tmp/failed-checks.log > /tmp/failed-checks-trimmed.log
+          {
+            echo "log<<AGENT_LOG_EOF"
+            cat /tmp/failed-checks-trimmed.log
+            echo "AGENT_LOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Build-fix / test-fix agent
+        if: fromJSON(steps.attempts.outputs.count) < 3
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            The "PR checks" workflow (lint/typecheck/test/build for frontend and backend) is
+            failing on this PR branch. The relevant failing job output is below, truncated to the
+            last ~20000 characters:
+
+            ```
+            ${{ steps.logs.outputs.log }}
+            ```
+
+            Diagnose and fix the failure(s). Rules:
+            - Only modify files under frontend/** or backend/** (respect existing per-directory
+              structure and conventions in CLAUDE.md).
+            - Never modify .github/workflows/**, infra/**, or any dotfile/secret.
+            - After making a change, re-run the relevant local command(s) yourself
+              (npm run lint / npm run typecheck / npm test / npm run build for frontend;
+              ruff check . / mypy app / pytest -q for backend, from within that directory) to
+              confirm the fix actually works before finishing.
+            - Commit your fix with a commit message that includes the trailer line
+              "Agentic-Fix: true" on its own line.
+            - Keep the fix minimal and scoped to the actual failure — do not refactor unrelated
+              code.
+
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(npm ci),Bash(npm run lint),Bash(npm run typecheck),Bash(npm test),Bash(npm run build),Bash(pip install -r requirements-dev.txt),Bash(ruff check .),Bash(mypy app),Bash(pytest -q),Bash(git:*)"
+
+      - name: Enforce path scope on the agent's commit
+        if: fromJSON(steps.attempts.outputs.count) < 3
+        run: |
+          BASE="origin/${{ github.event.pull_request.base.ref }}"
+          OUT_OF_SCOPE=$(git diff --name-only "$BASE"...HEAD | grep -Ev '^(frontend/|backend/)' || true)
+          if [ -n "$OUT_OF_SCOPE" ]; then
+            echo "Agent touched out-of-scope paths, reverting its commit(s) with a forward revert commit:"
+            echo "$OUT_OF_SCOPE"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git revert --no-edit "$BASE"..HEAD
+            git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+            gh pr comment "${{ github.event.pull_request.number }}" --body \
+              "The build-fix agent attempted to modify files outside frontend/**/backend/** ($OUT_OF_SCOPE) — its commit was reverted. Flagging for human review."
+            gh label create needs-human-review --color FF0000 --force || true
+            gh pr edit "${{ github.event.pull_request.number }}" --add-label needs-human-review
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
