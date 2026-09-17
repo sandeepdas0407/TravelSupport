@@ -6,6 +6,9 @@ param environmentName string
 @description('Azure region for regional resources')
 param location string = resourceGroup().location
 
+@description('Azure region for the Function App + its plan. Separate from `location` because App Service compute quota is region-specific and can differ per subscription.')
+param functionAppLocation string = location
+
 @description('Static Web App SKU')
 @allowed(['Free', 'Standard'])
 param staticWebAppSku string = 'Free'
@@ -50,7 +53,7 @@ module azureMaps 'modules/azureMaps.bicep' = {
 module functionApp 'modules/functionApp.bicep' = {
   name: 'functionApp'
   params: {
-    location: location
+    location: functionAppLocation
     name: '${resourcePrefix}-func'
     anthropicApiKey: anthropicApiKey
     azureMapsSubscriptionKey: azureMaps.outputs.primaryKey
@@ -67,7 +70,7 @@ module staticWebApp 'modules/staticWebApp.bicep' = {
     name: '${resourcePrefix}-swa'
     sku: staticWebAppSku
     backendResourceId: functionApp.outputs.functionAppId
-    backendRegion: location
+    backendRegion: functionAppLocation
   }
 }
 
