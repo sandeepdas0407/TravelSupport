@@ -33,13 +33,18 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
+// Basic (B1) rather than Consumption (Y1): this subscription has 0 quota for Y1 Dynamic VMs in
+// this region, and a self-service quota increase isn't guaranteed to land quickly. B1 draws from
+// the regular compute quota pool, at a small fixed monthly cost instead of Y1's near-free
+// pay-per-execution pricing. Revisit once Y1 quota is granted, if idle cost matters more than
+// deploy reliability.
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${name}-plan'
   location: location
-  kind: 'functionapp'
+  kind: 'linux'
   sku: {
-    name: 'Y1'
-    tier: 'Dynamic'
+    name: 'B1'
+    tier: 'Basic'
   }
   properties: {
     reserved: true
@@ -63,8 +68,6 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         { name: 'AzureWebJobsStorage', value: storageConnectionString }
-        { name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING', value: storageConnectionString }
-        { name: 'WEBSITE_CONTENTSHARE', value: toLower(name) }
         { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'true' }
         { name: 'ANTHROPIC_API_KEY', value: anthropicApiKey }
         { name: 'CLAUDE_MODEL', value: claudeModel }
