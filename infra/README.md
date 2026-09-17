@@ -34,19 +34,28 @@ anything can be deployed.
 
 4. **Add a federated credential** trusting GitHub Actions OIDC tokens from this repo. Repeat for
    each workflow/environment that needs to authenticate (PR-triggered `infra-plan.yml` uses
-   `pull_request`, manually-dispatched `infra-apply.yml` uses `environment`):
+   `pull_request`, manually-dispatched `infra-apply.yml` uses `environment`).
+
+   **Important**: the `subject` must exactly match the claim GitHub actually presents. As of
+   this writing that includes the numeric owner/repo IDs, not just the names —
+   `repo:<org>@<owner-id>/<repo>@<repo-id>:pull_request` (and `:environment:<env>` for
+   environment-gated workflows) — not the plain `repo:<org>/<repo>:...` form shown in some older
+   docs. If `azure/login` fails with `AADSTS700213: No matching federated identity record
+   found...`, the error message itself shows the exact subject claim GitHub sent — copy that
+   verbatim rather than guessing. Get the owner/repo IDs via `gh api repos/<org>/<repo> -q
+   '.owner.id, .id'`.
    ```
    az ad app federated-credential create --id <appId> --parameters '{
      "name": "travelsupport-pr",
      "issuer": "https://token.actions.githubusercontent.com",
-     "subject": "repo:<org>/<repo>:pull_request",
+     "subject": "repo:<org>@<owner-id>/<repo>@<repo-id>:pull_request",
      "audiences": ["api://AzureADTokenExchange"]
    }'
 
    az ad app federated-credential create --id <appId> --parameters '{
      "name": "travelsupport-infra-apply-dev",
      "issuer": "https://token.actions.githubusercontent.com",
-     "subject": "repo:<org>/<repo>:environment:dev",
+     "subject": "repo:<org>@<owner-id>/<repo>@<repo-id>:environment:dev",
      "audiences": ["api://AzureADTokenExchange"]
    }'
    ```
