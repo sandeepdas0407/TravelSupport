@@ -33,7 +33,6 @@ jobs:
           app_location: frontend
           api_location: backend
           output_location: dist
-          production_branch: main
 
   verify:
     needs: build-and-deploy
