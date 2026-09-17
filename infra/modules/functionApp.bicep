@@ -33,19 +33,17 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
-// Free (F1) rather than Consumption (Y1) or Basic (B1): this subscription has 0 quota for both
-// Y1 and B1 VMs in eastus2/eastus. An existing F1 Linux plan in westus2 proves that SKU+region
-// combination has quota on this subscription, so it's used here to unblock deployment. F1 has
-// real limitations (no "Always On", ~60 CPU-min/day cap, cold starts after idle) — acceptable for
-// a dev environment, but revisit for anything approaching real traffic or once B1/Y1 quota is
-// granted (self-service quota request, or Azure support).
+// Y1 (Consumption): eastus2/eastus both have 0 quota for Y1/B1 VMs on this subscription, and F1
+// (Free) is quota-available but Azure explicitly rejects Function Apps on Free/Shared plans
+// (FreeOrSharedFunctionsAppServicePlanNotSupported). Trying Y1 in westus2, a region already
+// proven to have *some* App Service quota on this subscription (an existing F1 plan runs there).
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${name}-plan'
   location: location
-  kind: 'linux'
+  kind: 'functionapp'
   sku: {
-    name: 'F1'
-    tier: 'Free'
+    name: 'Y1'
+    tier: 'Dynamic'
   }
   properties: {
     reserved: true
