@@ -24,6 +24,10 @@ param anthropicApiKey string
 @description('Google Places API key, used server-side for lodging suggestions')
 param googlePlacesApiKey string
 
+@secure()
+@description('Google Maps API key (Geocoding API + Routes API), used server-side for routing/geocoding')
+param googleMapsApiKey string
+
 var resourcePrefix = 'travelsupport-${environmentName}'
 
 module logAnalytics 'modules/logAnalytics.bicep' = {
@@ -43,20 +47,13 @@ module appInsights 'modules/appInsights.bicep' = {
   }
 }
 
-module azureMaps 'modules/azureMaps.bicep' = {
-  name: 'azureMaps'
-  params: {
-    name: '${resourcePrefix}-maps'
-  }
-}
-
 module functionApp 'modules/functionApp.bicep' = {
   name: 'functionApp'
   params: {
     location: functionAppLocation
     name: '${resourcePrefix}-func'
     anthropicApiKey: anthropicApiKey
-    azureMapsSubscriptionKey: azureMaps.outputs.primaryKey
+    googleMapsApiKey: googleMapsApiKey
     googlePlacesApiKey: googlePlacesApiKey
     allowedOrigins: allowedOrigins
     appInsightsConnectionString: appInsights.outputs.connectionString

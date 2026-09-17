@@ -14,3 +14,4 @@ param allowedOrigins = 'http://localhost:5173'
 // never commit real values here.
 param anthropicApiKey = ''
 param googlePlacesApiKey = ''
+param googleMapsApiKey = ''

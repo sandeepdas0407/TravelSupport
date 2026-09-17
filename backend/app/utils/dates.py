@@ -1,6 +1,8 @@
 from datetime import date, timedelta
 
-FORECAST_HORIZON_DAYS = 16
+# Open-Meteo's forecast API rejects a start/end date more than 15 days out from today
+# (empirically verified: today+15 succeeds, today+16 returns 400 "out of allowed range").
+FORECAST_HORIZON_DAYS = 15
 
 
 def trip_dates(start_date: date, num_days: int) -> list[date]:

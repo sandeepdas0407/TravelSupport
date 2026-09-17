@@ -1,7 +1,8 @@
 # Infra bootstrap
 
-The Bicep in this folder provisions Azure Maps, Application Insights (+ Log Analytics), and the
-Static Web App. It's applied by `.github/workflows/infra-apply.yml` (manual `workflow_dispatch`,
+The Bicep in this folder provisions Application Insights (+ Log Analytics) and the Static Web App
+(routing/geocoding and lodging both call out to Google APIs directly, not to a provisioned Azure
+resource). It's applied by `.github/workflows/infra-apply.yml` (manual `workflow_dispatch`,
 gated by a GitHub Environment) and previewed by `.github/workflows/infra-plan.yml` (automatic
 `what-if` on PRs touching `infra/**`).
 
@@ -79,7 +80,7 @@ anything can be deployed.
    - `AZURE_TENANT_ID` — `az account show --query tenantId -o tsv`
    - `AZURE_SUBSCRIPTION_ID` — `az account show --query id -o tsv`
    - `AZURE_RESOURCE_GROUP` — `rg-travelsupport`
-   - `ANTHROPIC_API_KEY`, `GOOGLE_PLACES_API_KEY` — passed as secure Bicep parameter overrides during apply (see `infra-apply.yml`)
+   - `ANTHROPIC_API_KEY`, `GOOGLE_PLACES_API_KEY`, `GOOGLE_MAPS_API_KEY` — passed as secure Bicep parameter overrides during apply (see `infra-apply.yml`)
 
 6. **Configure GitHub Environments** (Settings → Environments) named `dev` and `prod`, each with
    required reviewers, so `infra-apply.yml` (`environment: ${{ inputs.environment }}`) pauses for

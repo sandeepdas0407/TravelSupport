@@ -21,7 +21,7 @@ REQUEST_TIMEOUT_SECONDS = 20.0
 
 async def build_plan(settings: Settings, request: TripPlanRequest) -> TripPlanResponse:
     warnings: list[str] = []
-    data_sources: list[str] = ["azure-maps-route"]
+    data_sources: list[str] = ["google-maps-route"]
 
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
         origin, destination = await asyncio.gather(

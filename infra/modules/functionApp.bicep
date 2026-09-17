@@ -8,7 +8,7 @@ param name string
 param anthropicApiKey string
 
 @secure()
-param azureMapsSubscriptionKey string
+param googleMapsApiKey string
 
 @secure()
 param googlePlacesApiKey string
@@ -70,7 +70,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'true' }
         { name: 'ANTHROPIC_API_KEY', value: anthropicApiKey }
         { name: 'CLAUDE_MODEL', value: claudeModel }
-        { name: 'AZURE_MAPS_SUBSCRIPTION_KEY', value: azureMapsSubscriptionKey }
+        { name: 'GOOGLE_MAPS_API_KEY', value: googleMapsApiKey }
         { name: 'GOOGLE_PLACES_API_KEY', value: googlePlacesApiKey }
         { name: 'ALLOWED_ORIGINS', value: allowedOrigins }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }

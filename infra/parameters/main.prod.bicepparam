@@ -9,3 +9,4 @@ param allowedOrigins = 'https://travelsupport.azurestaticapps.net'
 // never commit real values here.
 param anthropicApiKey = ''
 param googlePlacesApiKey = ''
+param googleMapsApiKey = ''

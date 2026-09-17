@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     claude_model: str = "claude-sonnet-4-5"
 
-    azure_maps_subscription_key: str = ""
+    google_maps_api_key: str = ""
     google_places_api_key: str = ""
 
     allowed_origins: str = "http://localhost:5173"

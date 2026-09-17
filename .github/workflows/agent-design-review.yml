@@ -39,6 +39,11 @@ jobs:
             - Obvious scope creep, unused code, or missing test coverage for new logic.
             - Secrets or credentials committed in plain text.
 
+            Start with `gh pr diff` to read the whole diff in one call. Only fall back to
+            reading individual files (Read/Glob/Grep) for context you can't get from the diff
+            alone (e.g. checking whether a changed function is still referenced elsewhere) —
+            you have a limited turn budget, so don't Read every changed file up front.
+
             This is an advisory review only. You are NOT allowed to edit any files or push
             commits. Post a single top-level summary via `gh pr comment`, and use
             `mcp__github_inline_comment__create_inline_comment` (with `confirmed: true`) for
@@ -46,6 +51,6 @@ jobs:
             saying so rather than staying silent.
 
           claude_args: |
-            --max-turns 12
+            --max-turns 20
             --allowedTools "Read,Glob,Grep,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
             --disallowedTools "Edit,Write,NotebookEditCell"
