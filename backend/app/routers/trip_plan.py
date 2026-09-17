@@ -16,5 +16,5 @@ async def create_trip_plan(request: TripPlanRequest, settings: Settings = Settin
     try:
         return await build_plan(settings, request)
     except UpstreamServiceError as exc:
-        status_code = 400 if exc.service.startswith("azure-maps") else 502
+        status_code = 400 if exc.service.startswith("google-maps") else 502
         raise HTTPException(status_code=status_code, detail=f"{exc.service} failed: {exc.message}") from exc

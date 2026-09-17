@@ -11,7 +11,7 @@ This is a greenfield project (the working directory is currently empty) — this
 ### Decisions made with the user up front
 - **Pipeline**: AI agents (via `claude-code-action`) run the design/build/test/deploy stages in CI, with bounded iteration loops — not just themed conventional CI jobs.
 - **Stack**: React frontend + Python FastAPI backend.
-- **Data sources**: Open-Meteo (free, no key) for weather; Azure Maps for routing/geocoding; Google Places API for lodging/POI data. Anthropic Claude API (server-side) synthesizes all of it plus the user's free-text into the final narrative plan.
+- **Data sources**: Open-Meteo (free, no key) for weather; Google Maps (Geocoding API + Routes API) for routing/geocoding; Google Places API for lodging/POI data. Anthropic Claude API (server-side) synthesizes all of it plus the user's free-text into the final narrative plan.
 - **Persistence**: Stateless MVP — no login, no database.
 - **Repo**: single monorepo (`frontend/`, `backend/`, `infra/`, `.github/workflows/`).
 - **Azure hosting**: Azure Static Web Apps + managed Functions API (FastAPI wrapped via the Azure Functions ASGI adapter).
@@ -44,7 +44,7 @@ TravelSupport/
 │   │   ├── schemas.py                    # Pydantic request/response models
 │   │   ├── routers/trip_plan.py, health.py
 │   │   ├── services/
-│   │   │   ├── routing.py                # Azure Maps geocode + route
+│   │   │   ├── routing.py                # Google Maps geocode + route
 │   │   │   ├── weather.py                # Open-Meteo forecast + climatology fallback
 │   │   │   ├── places.py                 # Google Places (New) nearby search
 │   │   │   ├── synthesis.py              # Claude Messages API call
@@ -54,7 +54,7 @@ TravelSupport/
 │
 ├── infra/                         # Bicep IaC
 │   ├── main.bicep
-│   ├── modules/staticWebApp.bicep, appInsights.bicep, logAnalytics.bicep, azureMaps.bicep
+│   ├── modules/staticWebApp.bicep, appInsights.bicep, logAnalytics.bicep
 │   ├── parameters/main.dev.bicepparam, main.prod.bicepparam
 │   └── README.md                         # one-time OIDC bootstrap steps
 │
@@ -78,13 +78,13 @@ TravelSupport/
 
 **`POST /api/trip-plan`** — request: `from_location`, `to_location`, `start_date` (ISO date, not in the past), `num_days` (1–21), `additional_info` (optional, length-capped, treated as untrusted data in the Claude prompt — never as instructions, to guard against prompt injection).
 
-Response bundles: `route` (origin/destination geocode + distance/duration from Azure Maps), `weather` (per-day; `source: "forecast"` within Open-Meteo's ~16-day horizon, `source: "climatology"` beyond it — clearly flagged, never silently presented as a live forecast), `lodging` (top Google Places lodging results near the destination), `narrative_plan` (Claude-generated summary + day-by-day + recommended stays + packing suggestions), and `meta` (data sources used, warnings).
+Response bundles: `route` (origin/destination geocode + distance/duration from Google Maps), `weather` (per-day; `source: "forecast"` within Open-Meteo's ~16-day horizon, `source: "climatology"` beyond it — clearly flagged, never silently presented as a live forecast), `lodging` (top Google Places lodging results near the destination), `narrative_plan` (Claude-generated summary + day-by-day + recommended stays + packing suggestions), and `meta` (data sources used, warnings).
 
 `GET /api/health` — liveness check with no upstream calls, used by the deploy-verify agent.
 
 Error handling: geocoding failure is fatal (400); weather/lodging upstream failures degrade gracefully with a `meta.warnings` note rather than failing the whole request; Anthropic failures return 502/504 after retry.
 
-**Modules**: `services/routing.py`, `weather.py`, `places.py` each wrap one external API via `httpx.AsyncClient`; `services/synthesis.py` builds the Claude prompt and calls the Messages API with a forced JSON/tool schema for reliable structured output; `services/trip_planner.py` orchestrates (`asyncio.gather` the three data calls, then synthesize); `app/config.py` (pydantic-settings) reads `ANTHROPIC_API_KEY`, `AZURE_MAPS_SUBSCRIPTION_KEY`, `GOOGLE_PLACES_API_KEY` from env locally and from Azure Static Web Apps Application Settings in production — never exposed to the frontend.
+**Modules**: `services/routing.py`, `weather.py`, `places.py` each wrap one external API via `httpx.AsyncClient`; `services/synthesis.py` builds the Claude prompt and calls the Messages API with a forced JSON/tool schema for reliable structured output; `services/trip_planner.py` orchestrates (`asyncio.gather` the three data calls, then synthesize); `app/config.py` (pydantic-settings) reads `ANTHROPIC_API_KEY`, `GOOGLE_MAPS_API_KEY`, `GOOGLE_PLACES_API_KEY` from env locally and from Azure Static Web Apps Application Settings in production — never exposed to the frontend.
 
 **Azure Functions ASGI entrypoint** (`backend/function_app.py`):
 ```python
@@ -125,8 +125,9 @@ React 18 + TypeScript + Vite + Tailwind. `TripRequestForm.tsx` (react-hook-form 
 
 - **Azure Static Web Apps** (Free tier to start) — hosts frontend + managed Functions API together.
 - **Log Analytics Workspace + Application Insights** — backend observability (`azure-monitor-opentelemetry`), connection string as an SWA app setting.
-- **Azure Maps account** (Gen2 pricing) — geocoding + routing.
 - *(deferred hardening)* Key Vault + managed identity for secrets, once past MVP.
+
+Geocoding/routing (Google Maps) and lodging (Google Places) are called directly from the backend over the internet — no Azure resource is provisioned for either; both API keys are supplied as secure Bicep parameters (see below).
 
 `infra/main.bicep` composes the modules per environment via `.bicepparam` files. `infra-plan.yml` runs `what-if` on PRs; actual apply is only via manually-dispatched, environment-gated `infra-apply.yml` — intentionally kept out of the agentic loop.
 
@@ -150,7 +151,7 @@ Deterministic CI is deliberately green (M4) before agents are layered on top (M5
 
 - Open-Meteo's ~16-day forecast horizon means far-future travel dates fall back to historical climatology — must stay clearly labeled end-to-end so users don't mistake it for a live forecast.
 - Google Places API (New) is billed per request/field-mask tier — restrict `fieldMask` and result count to control cost.
-- Azure Maps free-tier monthly transaction grants — each trip-plan request costs ~2 geocode + 1 route call; monitor as usage grows.
+- Google Maps (Geocoding API + Routes API) is billed per request beyond its free monthly credit — each trip-plan request costs ~2 geocode + 1 route call; monitor as usage grows.
 - `claude-code-action` cost scales with diff size and fix-loop iterations — mitigated via `if: failure()` gating, `max_turns` caps, and diff-scoped context.
 - No auth/rate-limiting on the stateless MVP endpoint — a follow-up item (per-IP limiting or CAPTCHA) once real traffic is expected, since the endpoint fans out to three paid/rate-limited upstreams.
 - OIDC federated-credential bootstrap is a one-time manual step outside IaC — must stay documented in `infra/README.md` so it isn't lost.

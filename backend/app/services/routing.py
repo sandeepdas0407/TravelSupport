@@ -4,58 +4,68 @@ from app.config import Settings
 from app.schemas import GeoPoint, RouteSummary
 from app.utils.errors import UpstreamServiceError
 
-AZURE_MAPS_BASE_URL = "https://atlas.microsoft.com"
+GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
+ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
+
+ROUTES_FIELD_MASK = "routes.distanceMeters,routes.duration"
 
 
 async def geocode(client: httpx.AsyncClient, settings: Settings, query: str) -> GeoPoint:
     response = await client.get(
-        f"{AZURE_MAPS_BASE_URL}/search/address/json",
-        params={
-            "api-version": "1.0",
-            "subscription-key": settings.azure_maps_subscription_key,
-            "query": query,
-            "limit": 1,
-        },
+        GEOCODE_URL,
+        params={"address": query, "key": settings.google_maps_api_key},
     )
     if response.status_code != 200:
-        raise UpstreamServiceError("azure-maps-geocode", f"status {response.status_code}")
+        raise UpstreamServiceError("google-maps-geocode", f"status {response.status_code}")
 
-    results = response.json().get("results", [])
+    body = response.json()
+    if body.get("status") != "OK":
+        raise UpstreamServiceError("google-maps-geocode", body.get("status", "unknown error"))
+
+    results = body.get("results", [])
     if not results:
-        raise UpstreamServiceError("azure-maps-geocode", f"no match for '{query}'")
+        raise UpstreamServiceError("google-maps-geocode", f"no match for '{query}'")
 
     top = results[0]
-    position = top["position"]
+    location = top["geometry"]["location"]
     return GeoPoint(
         query=query,
-        lat=position["lat"],
-        lon=position["lon"],
-        resolved_name=top.get("address", {}).get("freeformAddress", query),
+        lat=location["lat"],
+        lon=location["lng"],
+        resolved_name=top.get("formatted_address", query),
     )
 
 
 async def get_route(
     client: httpx.AsyncClient, settings: Settings, origin: GeoPoint, destination: GeoPoint
 ) -> RouteSummary:
-    response = await client.get(
-        f"{AZURE_MAPS_BASE_URL}/route/directions/json",
-        params={
-            "api-version": "1.0",
-            "subscription-key": settings.azure_maps_subscription_key,
-            "query": f"{origin.lat},{origin.lon}:{destination.lat},{destination.lon}",
+    response = await client.post(
+        ROUTES_URL,
+        headers={
+            "X-Goog-Api-Key": settings.google_maps_api_key,
+            "X-Goog-FieldMask": ROUTES_FIELD_MASK,
+            "Content-Type": "application/json",
+        },
+        json={
+            "origin": {"location": {"latLng": {"latitude": origin.lat, "longitude": origin.lon}}},
+            "destination": {
+                "location": {"latLng": {"latitude": destination.lat, "longitude": destination.lon}}
+            },
+            "travelMode": "DRIVE",
         },
     )
     if response.status_code != 200:
-        raise UpstreamServiceError("azure-maps-route", f"status {response.status_code}")
+        raise UpstreamServiceError("google-maps-route", f"status {response.status_code}")
 
     routes = response.json().get("routes", [])
     if not routes:
-        raise UpstreamServiceError("azure-maps-route", "no route found")
+        raise UpstreamServiceError("google-maps-route", "no route found")
 
-    summary = routes[0]["summary"]
+    top_route = routes[0]
+    duration_seconds = int(top_route["duration"].rstrip("s"))
     return RouteSummary(
         origin=origin,
         destination=destination,
-        distance_km=summary["lengthInMeters"] / 1000,
-        duration_minutes=round(summary["travelTimeInSeconds"] / 60),
+        distance_km=top_route["distanceMeters"] / 1000,
+        duration_minutes=round(duration_seconds / 60),
     )

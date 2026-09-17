@@ -33,7 +33,7 @@ def _sample_response() -> TripPlanResponse:
         meta=TripPlanMeta(
             generated_at=datetime.now(UTC),
             model_used="claude-sonnet-4-5",
-            data_sources_used=["azure-maps-route"],
+            data_sources_used=["google-maps-route"],
             warnings=[],
         ),
     )
@@ -81,7 +81,7 @@ def test_trip_plan_rejects_past_date() -> None:
 
 def test_trip_plan_maps_geocode_failure_to_400(monkeypatch) -> None:
     async def fake_build_plan(settings, request):
-        raise UpstreamServiceError("azure-maps-geocode", "no match")
+        raise UpstreamServiceError("google-maps-geocode", "no match")
 
     monkeypatch.setattr(trip_plan_router, "build_plan", fake_build_plan)
 

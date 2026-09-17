@@ -8,16 +8,17 @@ from app.utils.errors import UpstreamServiceError
 
 @respx.mock
 async def test_geocode_returns_geo_point(settings) -> None:
-    respx.get("https://atlas.microsoft.com/search/address/json").mock(
+    respx.get("https://maps.googleapis.com/maps/api/geocode/json").mock(
         return_value=httpx.Response(
             200,
             json={
+                "status": "OK",
                 "results": [
                     {
-                        "position": {"lat": 51.1784, "lon": -115.5708},
-                        "address": {"freeformAddress": "Banff, AB, Canada"},
+                        "geometry": {"location": {"lat": 51.1784, "lng": -115.5708}},
+                        "formatted_address": "Banff, AB, Canada",
                     }
-                ]
+                ],
             },
         )
     )
@@ -30,8 +31,8 @@ async def test_geocode_returns_geo_point(settings) -> None:
 
 @respx.mock
 async def test_geocode_raises_on_no_results(settings) -> None:
-    respx.get("https://atlas.microsoft.com/search/address/json").mock(
-        return_value=httpx.Response(200, json={"results": []})
+    respx.get("https://maps.googleapis.com/maps/api/geocode/json").mock(
+        return_value=httpx.Response(200, json={"status": "ZERO_RESULTS", "results": []})
     )
     async with httpx.AsyncClient() as client:
         with pytest.raises(UpstreamServiceError):
@@ -41,10 +42,10 @@ async def test_geocode_raises_on_no_results(settings) -> None:
 @respx.mock
 async def test_get_route_returns_summary(settings, banff) -> None:
     origin = banff.model_copy(update={"lat": 47.6, "lon": -122.33, "resolved_name": "Seattle, WA"})
-    respx.get("https://atlas.microsoft.com/route/directions/json").mock(
+    respx.post("https://routes.googleapis.com/directions/v2:computeRoutes").mock(
         return_value=httpx.Response(
             200,
-            json={"routes": [{"summary": {"lengthInMeters": 970_000, "travelTimeInSeconds": 37_200}}]},
+            json={"routes": [{"distanceMeters": 970_000, "duration": "37200s"}]},
         )
     )
     async with httpx.AsyncClient() as client:

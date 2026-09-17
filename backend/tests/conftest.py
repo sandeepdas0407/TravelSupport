@@ -8,7 +8,7 @@ from app.schemas import GeoPoint
 def settings() -> Settings:
     return Settings(
         anthropic_api_key="test-anthropic-key",
-        azure_maps_subscription_key="test-azure-maps-key",
+        google_maps_api_key="test-google-maps-key",
         google_places_api_key="test-google-places-key",
     )
 
