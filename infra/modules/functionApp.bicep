@@ -33,18 +33,19 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
-// Basic (B1) rather than Consumption (Y1): this subscription has 0 quota for Y1 Dynamic VMs in
-// this region, and a self-service quota increase isn't guaranteed to land quickly. B1 draws from
-// the regular compute quota pool, at a small fixed monthly cost instead of Y1's near-free
-// pay-per-execution pricing. Revisit once Y1 quota is granted, if idle cost matters more than
-// deploy reliability.
+// Free (F1) rather than Consumption (Y1) or Basic (B1): this subscription has 0 quota for both
+// Y1 and B1 VMs in eastus2/eastus. An existing F1 Linux plan in westus2 proves that SKU+region
+// combination has quota on this subscription, so it's used here to unblock deployment. F1 has
+// real limitations (no "Always On", ~60 CPU-min/day cap, cold starts after idle) — acceptable for
+// a dev environment, but revisit for anything approaching real traffic or once B1/Y1 quota is
+// granted (self-service quota request, or Azure support).
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${name}-plan'
   location: location
   kind: 'linux'
   sku: {
-    name: 'B1'
-    tier: 'Basic'
+    name: 'F1'
+    tier: 'Free'
   }
   properties: {
     reserved: true
