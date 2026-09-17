@@ -33,17 +33,17 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
-// Y1 (Consumption): eastus2/eastus both have 0 quota for Y1/B1 VMs on this subscription, and F1
-// (Free) is quota-available but Azure explicitly rejects Function Apps on Free/Shared plans
-// (FreeOrSharedFunctionsAppServicePlanNotSupported). Trying Y1 in westus2, a region already
-// proven to have *some* App Service quota on this subscription (an existing F1 plan runs there).
+// B1 (Basic, paid): eastus2/eastus have 0 quota for both Y1 and B1 on this subscription, and F1
+// (Free) is explicitly rejected for Function Apps. westus2 is the only region confirmed to have
+// any App Service quota here (an existing F1 plan runs there) — using a paid tier there rather
+// than continuing to guess at free/consumption combinations.
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${name}-plan'
   location: location
-  kind: 'functionapp'
+  kind: 'linux'
   sku: {
-    name: 'Y1'
-    tier: 'Dynamic'
+    name: 'B1'
+    tier: 'Basic'
   }
   properties: {
     reserved: true
